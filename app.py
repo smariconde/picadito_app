@@ -3,6 +3,8 @@ import sqlite3
 import pandas as pd
 import random
 from itertools import combinations
+import altair as alt
+import numpy as np
 
 # Configurar el título de la página
 st.set_page_config(page_title="Picadito App ⚽")
@@ -164,6 +166,16 @@ def borrar_jugador(jugador_id):
 def actualizar_jugador(jugador_id, nombre, posicion):
     c.execute("UPDATE jugadores SET nombre = ?, posicion = ? WHERE id = ?", (nombre, posicion, jugador_id))
     conn.commit()
+
+def get_table_style():
+    return [
+        dict(selector="th", props=[("font-weight", "bold"), 
+                                   ("color", "#FFA500"), 
+                                   ("background-color", "#1E1E1E")]),
+        dict(selector="td", props=[("color", "#FFFFFF"), 
+                                   ("background-color", "#2E2E2E")]),
+        dict(selector="tr:nth-of-type(even)", props=[("background-color", "#3E3E3E")])
+    ]
 
 # Interfaz de Streamlit
 st.title('Picadito App ⚽')
@@ -338,21 +350,55 @@ with tab4:
     # Ordenar por porcentaje de victorias (descendente) y luego por partidos jugados (descendente)
     estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'partidos_jugados'], ascending=[False, False])
     
-    # Función para aplicar colores alternados a las filas
-    def highlight_rows(row):
-        if row.name % 2 == 0:
-            return ['background-color: #f2f2f2'] * len(row)
-        else:
-            return ['background-color: white'] * len(row)
+    # Agregar columna de posición
+    estadisticas['posicion'] = range(1, len(estadisticas) + 1)
     
-    # Mostrar la tabla de posiciones con estilos
-    st.dataframe(estadisticas.style
-                 .apply(highlight_rows, axis=1)
-                 .highlight_max(subset=['victorias', 'partidos_jugados', 'porcentaje_victorias'], color='lightgreen')
-                 .format({'porcentaje_victorias': '{:.2f}%'})
-                 .set_properties(**{'text-align': 'center'})
-                 .set_table_styles([dict(selector='th', props=[('text-align', 'center')])])
-                )
+    # Reordenar las columnas para que 'posicion' sea la primera
+    estadisticas = estadisticas[['posicion'] + [col for col in estadisticas.columns if col != 'posicion']]
+    
+    # Detectar el tema actual
+    is_dark_theme = st.get_option("theme.base") == "dark"
+    
+    # Función para aplicar el degradado de colores
+    def color_scale(val):
+        min_val = estadisticas['porcentaje_victorias'].min()
+        max_val = estadisticas['porcentaje_victorias'].max()
+        
+        # Crear un degradado de rojo (bajo) a verde (alto)
+        r = max((max_val - val) / (max_val - min_val), 0)
+        g = max((val - min_val) / (max_val - min_val), 0)
+        b = 0
+        
+        # Ajustar la opacidad y el color del texto según el tema
+        if is_dark_theme:
+            return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7); color: white;'
+        else:
+            return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.3); color: black;'
+    
+    # Aplicar estilos a la tabla
+    styled_table = (estadisticas.style
+        .applymap(color_scale, subset=['porcentaje_victorias'])
+        .format({
+            'posicion': '{:.0f}',  # Formato para la nueva columna de posición
+            'porcentaje_victorias': '{:.2f}%',
+            'victorias': '{:.0f}',
+            'partidos_jugados': '{:.0f}'
+        })
+        .set_properties(**{
+            'font-weight': 'bold',
+            'text-align': 'center'
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', '#4A4A4A' if is_dark_theme else '#E6E6E6'), 
+                ('color', 'white' if is_dark_theme else 'black')
+            ]},
+            {'selector': 'td', 'props': [('border', '1px solid #4A4A4A' if is_dark_theme else '1px solid #E6E6E6')]},
+        ])
+    )
+    
+    # Mostrar la tabla
+    st.dataframe(styled_table, hide_index=True, height=400)
 
 with tab5:
     st.header("Historial de Partidos 🏟️")
