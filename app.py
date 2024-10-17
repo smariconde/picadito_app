@@ -26,7 +26,7 @@ def agregar_jugador(nombre, posicion):
     conn.commit()
 
 def obtener_jugadores():
-    return pd.read_sql_query("SELECT * FROM jugadores", conn)
+    return pd.read_sql_query("SELECT id, nombre, posicion FROM jugadores ORDER BY nombre", conn)
 
 def obtener_victorias_jugador(jugador):
     query = """
@@ -145,21 +145,90 @@ def obtener_estadisticas_jugadores():
     df['porcentaje_victorias'] = df['porcentaje_victorias'].fillna(0)
     return df
 
+def obtener_partidos():
+    query = """
+    SELECT id, fecha, equipo1, equipo2, goles1, goles2
+    FROM partidos
+    ORDER BY fecha DESC
+    """
+    return pd.read_sql_query(query, conn)
+
+def borrar_partido(partido_id):
+    c.execute("DELETE FROM partidos WHERE id = ?", (partido_id,))
+    conn.commit()
+
+def borrar_jugador(jugador_id):
+    c.execute("DELETE FROM jugadores WHERE id = ?", (jugador_id,))
+    conn.commit()
+
+def actualizar_jugador(jugador_id, nombre, posicion):
+    c.execute("UPDATE jugadores SET nombre = ?, posicion = ? WHERE id = ?", (nombre, posicion, jugador_id))
+    conn.commit()
+
 # Interfaz de Streamlit
 st.title('Picadito App ⚽')
 
-tab1, tab2, tab3, tab4 = st.tabs(["Jugadores", "Generar Equipos", "Registrar Partido", "Posiciones"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Jugadores 👤", "Generar Equipos 👥", "Registrar Partido 📝", "Posiciones 🥇", "Historial de Partidos 🏟️"])
 
 with tab1:
     st.header("Registro de Jugadores 👤")
-    nombre = st.text_input("Nombre del jugador")
-    posicion = st.selectbox("Posición", ["Delantero", "Mediocampista", "Defensor", "Arquero"])
-    if st.button("Agregar Jugador"):
-        agregar_jugador(nombre, posicion)
-        st.success(f"Jugador {nombre} agregado como {posicion}")
+    
+    # Formulario para agregar nuevo jugador
+    with st.form("nuevo_jugador"):
+        nuevo_nombre = st.text_input("Nombre del jugador")
+        nueva_posicion = st.selectbox("Posición", ["Delantero", "Mediocampista", "Defensor", "Arquero"])
+        submitted = st.form_submit_button("Agregar Jugador")
+        if submitted:
+            agregar_jugador(nuevo_nombre, nueva_posicion)
+            st.success(f"Jugador {nuevo_nombre} agregado como {nueva_posicion}")
+            st.rerun()
     
     st.subheader("Lista de Jugadores")
-    st.dataframe(obtener_jugadores())
+    
+    # Obtener y mostrar la lista de jugadores
+    jugadores = obtener_jugadores()
+    
+    # Crear un DataFrame con columnas adicionales para edición y eliminación
+    jugadores_edit = jugadores.copy()
+    
+    # Mostrar la tabla editable
+    edited_df = st.data_editor(
+        jugadores_edit,
+        hide_index=True,
+        column_config={
+            "id": None,  # Ocultar la columna ID
+            "nombre": "Nombre",
+            "posicion": st.column_config.SelectboxColumn(
+                "Posición",
+                options=["Delantero", "Mediocampista", "Defensor", "Arquero"],
+                required=True
+            ),
+        },
+        key="jugadores_table"
+    )
+    
+    # Procesar las ediciones y eliminaciones
+    if st.button("Guardar Cambios"):
+        for index, row in edited_df.iterrows():
+            original_row = jugadores.loc[jugadores['id'] == row['id']].iloc[0]
+            if row['nombre'] != original_row['nombre'] or row['posicion'] != original_row['posicion']:
+                actualizar_jugador(row['id'], row['nombre'], row['posicion'])
+                st.success(f"Jugador {row['nombre']} actualizado.")
+        
+        st.rerun()  # Recargar la app para mostrar los cambios
+    
+    # Opción para borrar jugadores
+    st.subheader("Borrar Jugadores")
+    jugadores_a_borrar = st.multiselect("Selecciona jugadores para borrar", jugadores['nombre'].tolist())
+    if st.button("Borrar Jugadores Seleccionados"):
+        if jugadores_a_borrar:
+            for nombre in jugadores_a_borrar:
+                jugador_id = jugadores[jugadores['nombre'] == nombre]['id'].iloc[0]
+                borrar_jugador(jugador_id)
+                st.success(f"Jugador {nombre} eliminado.")
+            st.rerun()  # Recargar la app para mostrar los cambios
+        else:
+            st.warning("No se seleccionaron jugadores para borrar.")
 
 with tab2:
     st.header("Generar Equipos 👥")
@@ -284,6 +353,31 @@ with tab4:
                  .set_properties(**{'text-align': 'center'})
                  .set_table_styles([dict(selector='th', props=[('text-align', 'center')])])
                 )
+
+with tab5:
+    st.header("Historial de Partidos 🏟️")
+    
+    partidos = obtener_partidos()
+    
+    if not partidos.empty:
+        for _, partido in partidos.iterrows():
+            with st.expander(f"Partido del {partido['fecha']} - {partido['equipo1'].split(',')[0]} vs {partido['equipo2'].split(',')[0]}"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write("**Equipo 1:**")
+                    st.write(", ".join(partido['equipo1'].split(',')))
+                with col2:
+                    st.write("**Resultado:**")
+                    st.write(f"{partido['goles1']} - {partido['goles2']}")
+                with col3:
+                    st.write("**Equipo 2:**")
+                    st.write(", ".join(partido['equipo2'].split(',')))
+                
+                if st.button("Borrar Partido", key=f"borrar_{partido['id']}"):
+                    borrar_partido(partido['id'])
+                    st.success("Partido borrado exitosamente. Recarga la página para ver los cambios.")
+    else:
+        st.write("No hay partidos registrados.")
 
 # Cerrar conexión
 conn.close()
