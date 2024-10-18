@@ -179,12 +179,15 @@ def get_table_style():
         dict(selector="tr:nth-of-type(even)", props=[("background-color", "#3E3E3E")])
     ]
 
-# Interfaz de Streamlit
-st.title('Picadito App ⚽')
+# Menú lateral
+st.sidebar.title('Picadito App ⚽')
+menu = st.sidebar.radio(
+    "Menú",
+    ["Jugadores 👤", "Generar Equipos 👥", "Registrar Partido 📝", "Posiciones 🥇", "Historial de Partidos 🏟️"]
+)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Jugadores 👤", "Generar Equipos 👥", "Registrar Partido 📝", "Posiciones 🥇", "Historial de Partidos 🏟️"])
-
-with tab1:
+# Contenido principal
+if menu == "Jugadores 👤":
     st.header("Registro de Jugadores 👤")
     
     # Formulario para agregar nuevo jugador
@@ -244,7 +247,7 @@ with tab1:
         else:
             st.warning("No se seleccionaron jugadores para borrar.")
 
-with tab2:
+elif menu == "Generar Equipos 👥":
     st.header("Generar Equipos 👥")
     fecha_generacion = st.date_input("Fecha del partido", key="fecha_generacion")
     jugadores = obtener_jugadores()['nombre'].tolist()
@@ -330,7 +333,7 @@ with tab2:
     else:
         st.warning("Selecciona al menos dos jugadores para generar equipos.")
 
-with tab3:
+elif menu == "Registrar Partido 📝":
     st.header("Registrar Partido 📝")
     fecha = st.date_input("Fecha del partido", key="fecha_registro")
     
@@ -368,7 +371,7 @@ with tab3:
         registrar_partido(fecha, equipo1, equipo2, goles1, goles2)
         st.success("Partido registrado exitosamente")
 
-with tab4:
+elif menu == "Posiciones 🥇":
     st.header("Tabla de Posiciones 🥇")
     
     estadisticas = obtener_estadisticas_jugadores()
@@ -426,7 +429,7 @@ with tab4:
     # Mostrar la tabla
     st.dataframe(styled_table, hide_index=True, height=400)
 
-with tab5:
+elif menu == "Historial de Partidos 🏟️":
     st.header("Historial de Partidos 🏟️")
     
     partidos = obtener_partidos()
