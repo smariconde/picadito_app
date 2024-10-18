@@ -251,13 +251,14 @@ with tab2:
     jugadores_disponibles = st.multiselect("Selecciona los jugadores disponibles", jugadores)
     
     # Mostrar el contador de jugadores seleccionados
-    st.write(f"Jugadores seleccionados: {len(jugadores_disponibles)}")
+    num_jugadores_seleccionados = len(jugadores_disponibles)
+    st.write(f"Jugadores seleccionados: {num_jugadores_seleccionados}")
     
     # Calculate max_value based on the number of available players
-    max_jugadores_por_equipo = len(jugadores_disponibles) // 2
+    max_jugadores_por_equipo = num_jugadores_seleccionados // 2
     
-    # Only show the number input if there are enough players selected
-    if max_jugadores_por_equipo > 0:
+    # Only show the options if there are enough players selected
+    if max_jugadores_por_equipo >= 1:
         jugadores_por_equipo = st.number_input("Jugadores por equipo", 
                                                min_value=1, 
                                                max_value=max_jugadores_por_equipo, 
@@ -265,11 +266,34 @@ with tab2:
         
         # Parámetros adicionales para la generación de equipos
         st.subheader("Parámetros de generación")
-        max_defensores = st.number_input("Máximo de defensores por equipo", min_value=0, max_value=jugadores_por_equipo, value=4)
-        min_mediocampistas = st.number_input("Mínimo de mediocampistas por equipo", min_value=0, max_value=jugadores_por_equipo, value=1)
-        min_delanteros = st.number_input("Mínimo de delanteros por equipo", min_value=0, max_value=jugadores_por_equipo, value=1)
-        ponderacion_victorias = st.slider("Ponderación de victorias", min_value=0.0, max_value=2.0, value=1.0, step=0.1)
-        
+        max_defensores = st.number_input("Máximo de defensores por equipo", 
+                                         min_value=0, 
+                                         max_value=jugadores_por_equipo, 
+                                         value=min(4, jugadores_por_equipo))
+        min_mediocampistas = st.number_input("Mínimo de mediocampistas por equipo", 
+                                             min_value=0, 
+                                             max_value=jugadores_por_equipo, 
+                                             value=min(1, jugadores_por_equipo))
+        min_delanteros = st.number_input("Mínimo de delanteros por equipo", 
+                                         min_value=0, 
+                                         max_value=jugadores_por_equipo, 
+                                         value=min(1, jugadores_por_equipo))
+        ponderacion_victorias = st.slider("Ponderación de victorias", 
+                                          min_value=0.0, 
+                                          max_value=2.0, 
+                                          value=1.0, 
+                                          step=0.1)
+
+        st.markdown("""
+        <p style='color: gray; font-style: italic; font-size: 0.9em;'>
+        <strong>Efecto de diferentes valores de ponderación:</strong><br>
+        • 1.0 (predeterminado): Equilibrio normal entre victorias de ambos equipos.<br>
+        • > 1.0: Mayor énfasis en igualar victorias, posiblemente menos balance en otros aspectos.<br>
+        • < 1.0: Menor énfasis en victorias, posiblemente más balance en otros aspectos.<br>
+        • 0.0: Ignora completamente el historial de victorias.
+        </p>
+        """, unsafe_allow_html=True)
+
         if st.button("Generar Equipos"):
             if len(jugadores_disponibles) < jugadores_por_equipo * 2:
                 st.error("No hay suficientes jugadores disponibles para formar dos equipos.")
