@@ -5,6 +5,8 @@ import random
 from itertools import combinations
 import altair as alt
 import numpy as np
+import time
+
 
 # Configurar el título de la página
 st.set_page_config(page_title="Picadito App ⚽")
