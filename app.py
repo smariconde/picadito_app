@@ -373,58 +373,67 @@ with tab4:
     
     estadisticas = obtener_estadisticas_jugadores()
     
-    # Ordenar por porcentaje de victorias (descendente) y luego por partidos jugados (descendente)
-    estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'partidos_jugados'], ascending=[False, False])
-    
-    # Agregar columna de posición
-    estadisticas['posicion'] = range(1, len(estadisticas) + 1)
-    
-    # Reordenar las columnas para que 'posicion' sea la primera
-    estadisticas = estadisticas[['posicion'] + [col for col in estadisticas.columns if col != 'posicion']]
-    
-    # Detectar el tema actual
-    is_dark_theme = st.get_option("theme.base") == "dark"
-    
-    # Función para aplicar el degradado de colores
-    def color_scale(val):
-        min_val = estadisticas['porcentaje_victorias'].min()
-        max_val = estadisticas['porcentaje_victorias'].max()
+    if estadisticas.empty:
+        st.write("No hay datos de partidos para mostrar en la tabla de posiciones.")
+    else:
+        # Ordenar por porcentaje de victorias (descendente) y luego por partidos jugados (descendente)
+        estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'partidos_jugados'], ascending=[False, False])
         
-        # Crear un degradado de rojo (bajo) a verde (alto)
-        r = max((max_val - val) / (max_val - min_val), 0)
-        g = max((val - min_val) / (max_val - min_val), 0)
-        b = 0
+        # Agregar columna de posición
+        estadisticas['posicion'] = range(1, len(estadisticas) + 1)
         
-        # Ajustar la opacidad y el color del texto según el tema
-        if is_dark_theme:
-            return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7); color: white;'
-        else:
-            return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.3); color: black;'
-    
-    # Aplicar estilos a la tabla
-    styled_table = (estadisticas.style
-        .applymap(color_scale, subset=['porcentaje_victorias'])
-        .format({
-            'posicion': '{:.0f}',  # Formato para la nueva columna de posición
-            'porcentaje_victorias': '{:.2f}%',
-            'victorias': '{:.0f}',
-            'partidos_jugados': '{:.0f}'
-        })
-        .set_properties(**{
-            'font-weight': 'bold',
-            'text-align': 'center'
-        })
-        .set_table_styles([
-            {'selector': 'th', 'props': [
-                ('background-color', '#4A4A4A' if is_dark_theme else '#E6E6E6'), 
-                ('color', 'white' if is_dark_theme else 'black')
-            ]},
-            {'selector': 'td', 'props': [('border', '1px solid #4A4A4A' if is_dark_theme else '1px solid #E6E6E6')]},
-        ])
-    )
-    
-    # Mostrar la tabla
-    st.dataframe(styled_table, hide_index=True, height=400)
+        # Reordenar las columnas para que 'posicion' sea la primera
+        estadisticas = estadisticas[['posicion'] + [col for col in estadisticas.columns if col != 'posicion']]
+        
+        # Detectar el tema actual
+        is_dark_theme = st.get_option("theme.base") == "dark"
+        
+        # Función para aplicar el degradado de colores
+        def color_scale(val):
+            if pd.isna(val):
+                return ''
+            min_val = estadisticas['porcentaje_victorias'].min()
+            max_val = estadisticas['porcentaje_victorias'].max()
+            
+            # Evitar división por cero
+            if min_val == max_val:
+                r, g = 0, 0
+            else:
+                # Crear un degradado de rojo (bajo) a verde (alto)
+                r = max((max_val - val) / (max_val - min_val), 0)
+                g = max((val - min_val) / (max_val - min_val), 0)
+            b = 0
+            
+            # Ajustar la opacidad y el color del texto según el tema
+            if is_dark_theme:
+                return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7); color: white;'
+            else:
+                return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.3); color: black;'
+        
+        # Aplicar estilos a la tabla
+        styled_table = (estadisticas.style
+            .applymap(color_scale, subset=['porcentaje_victorias'])
+            .format({
+                'posicion': '{:.0f}',  # Formato para la nueva columna de posición
+                'porcentaje_victorias': '{:.2f}%',
+                'victorias': '{:.0f}',
+                'partidos_jugados': '{:.0f}'
+            })
+            .set_properties(**{
+                'font-weight': 'bold',
+                'text-align': 'center'
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', '#4A4A4A' if is_dark_theme else '#E6E6E6'), 
+                    ('color', 'white' if is_dark_theme else 'black')
+                ]},
+                {'selector': 'td', 'props': [('border', '1px solid #4A4A4A' if is_dark_theme else '1px solid #E6E6E6')]},
+            ])
+        )
+        
+        # Mostrar la tabla
+        st.dataframe(styled_table, hide_index=True, height=400)
 
 with tab5:
     st.header("Historial de Partidos 🏟️")
