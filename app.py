@@ -127,22 +127,50 @@ def obtener_equipos_generados():
 
 def obtener_estadisticas_jugadores():
     query = """
+    WITH partidos_jugador AS (
+        SELECT 
+            j.id,
+            j.nombre,
+            j.posicion,
+            p.id as partido_id,
+            p.fecha,
+            CASE 
+                WHEN (p.equipo1 LIKE '%' || j.nombre || '%' AND p.goles1 > p.goles2) OR 
+                     (p.equipo2 LIKE '%' || j.nombre || '%' AND p.goles2 > p.goles1) 
+                THEN 1 
+                ELSE 0 
+            END as victoria
+        FROM 
+            jugadores j
+        LEFT JOIN 
+            partidos p ON p.equipo1 LIKE '%' || j.nombre || '%' OR p.equipo2 LIKE '%' || j.nombre || '%'
+        ORDER BY 
+            j.id, p.fecha DESC
+    ),
+    rachas AS (
+        SELECT 
+            id,
+            nombre,
+            posicion,
+            SUM(victoria) OVER (PARTITION BY id ORDER BY fecha DESC) as racha_actual,
+            COUNT(*) OVER (PARTITION BY id) as partidos_jugados,
+            SUM(victoria) OVER (PARTITION BY id) as victorias
+        FROM 
+            partidos_jugador
+    )
     SELECT 
-        j.nombre,
-        j.posicion,
-        COUNT(DISTINCT p.id) as partidos_jugados,
-        SUM(CASE 
-            WHEN (p.equipo1 LIKE '%' || j.nombre || '%' AND p.goles1 > p.goles2) OR 
-                 (p.equipo2 LIKE '%' || j.nombre || '%' AND p.goles2 > p.goles1) 
-            THEN 1 ELSE 0 END) as victorias
+        id,
+        nombre,
+        posicion,
+        MAX(partidos_jugados) as partidos_jugados,
+        MAX(victorias) as victorias,
+        MAX(racha_actual) as racha_ganadora
     FROM 
-        jugadores j
-    LEFT JOIN 
-        partidos p ON p.equipo1 LIKE '%' || j.nombre || '%' OR p.equipo2 LIKE '%' || j.nombre || '%'
+        rachas
     GROUP BY 
-        j.id
+        id, nombre, posicion
     ORDER BY 
-        victorias DESC, partidos_jugados DESC
+        racha_ganadora DESC, victorias DESC, partidos_jugados DESC
     """
     df = pd.read_sql_query(query, conn)
     df['porcentaje_victorias'] = (df['victorias'] / df['partidos_jugados'] * 100).round(2)
@@ -233,6 +261,7 @@ with tab1:
     
     # Opción para borrar jugadores
     st.subheader("Borrar Jugadores")
+    jugadores = obtener_jugadores()  # Asegúrate de obtener la lista actualizada de jugadores
     jugadores_a_borrar = st.multiselect("Selecciona jugadores para borrar", jugadores['nombre'].tolist())
     if st.button("Borrar Jugadores Seleccionados"):
         if jugadores_a_borrar:
@@ -240,6 +269,8 @@ with tab1:
                 jugador_id = jugadores[jugadores['nombre'] == nombre]['id'].iloc[0]
                 borrar_jugador(jugador_id)
                 st.success(f"Jugador {nombre} eliminado.")
+            
+            # Actualizar la lista de jugadores después de borrar
             st.rerun()  # Recargar la app para mostrar los cambios
         else:
             st.warning("No se seleccionaron jugadores para borrar.")
@@ -376,26 +407,35 @@ with tab4:
     if estadisticas.empty:
         st.write("No hay datos de partidos para mostrar en la tabla de posiciones.")
     else:
-        # Ordenar por porcentaje de victorias (descendente) y luego por partidos jugados (descendente)
-        estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'partidos_jugados'], ascending=[False, False])
+        # Mostrar los jugadores con racha ganadora
+        st.subheader("Jugadores con Racha Ganadora 🔥")
+        rachas = estadisticas[estadisticas['racha_ganadora'] > 0].head(5)
+        for _, jugador in rachas.iterrows():
+            trofeo = "🏆" if jugador['racha_ganadora'] >= 7 else ""
+            st.write(f"{jugador['nombre']}: {jugador['racha_ganadora']} partidos {trofeo}")
         
-        # Agregar columna de posición
+        # Tabla de posiciones
+        st.subheader("Tabla General")
+        estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'victorias', 'partidos_jugados'], ascending=[False, False, False])
         estadisticas['posicion'] = range(1, len(estadisticas) + 1)
-        
-        # Reordenar las columnas para que 'posicion' sea la primera
-        estadisticas = estadisticas[['posicion'] + [col for col in estadisticas.columns if col != 'posicion']]
+        estadisticas = estadisticas[['posicion', 'nombre', 'partidos_jugados', 'victorias', 'porcentaje_victorias', 'racha_ganadora']]
         
         # Detectar el tema actual
         is_dark_theme = st.get_option("theme.base") == "dark"
         
         # Función para aplicar el degradado de colores
-        def color_scale(val):
+        def color_scale(val, column):
             if pd.isna(val):
                 return ''
-            min_val = estadisticas['porcentaje_victorias'].min()
-            max_val = estadisticas['porcentaje_victorias'].max()
+            if column == 'racha_ganadora':
+                if val >= 7:
+                    return 'background-color: gold; color: black;'
+                elif val > 0:
+                    return 'background-color: lightgreen; color: black;'
             
-            # Evitar división por cero
+            min_val = estadisticas[column].min()
+            max_val = estadisticas[column].max()
+            
             if min_val == max_val:
                 r, g = 0, 0
             else:
@@ -412,12 +452,14 @@ with tab4:
         
         # Aplicar estilos a la tabla
         styled_table = (estadisticas.style
-            .applymap(color_scale, subset=['porcentaje_victorias'])
+            .applymap(lambda x: color_scale(x, 'porcentaje_victorias'), subset=['porcentaje_victorias'])
+            .applymap(lambda x: color_scale(x, 'racha_ganadora'), subset=['racha_ganadora'])
             .format({
-                'posicion': '{:.0f}',  # Formato para la nueva columna de posición
+                'posicion': '{:.0f}',
                 'porcentaje_victorias': '{:.2f}%',
                 'victorias': '{:.0f}',
-                'partidos_jugados': '{:.0f}'
+                'partidos_jugados': '{:.0f}',
+                'racha_ganadora': '{:.0f}'
             })
             .set_properties(**{
                 'font-weight': 'bold',
@@ -462,3 +504,4 @@ with tab5:
 
 # Cerrar conexión
 conn.close()
+
