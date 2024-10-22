@@ -154,10 +154,10 @@ def obtener_estadisticas_jugadores():
             victoria,
             -- Calcular la racha ganadora
             SUM(CASE WHEN victoria = 1 THEN 1 ELSE 0 END) OVER (PARTITION BY id ORDER BY fecha ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as racha_actual,
-            -- Reiniciar la racha a 0 cuando hay una derrota
-            COUNT(CASE WHEN victoria = 1 THEN 1 END) OVER (PARTITION BY id ORDER BY fecha ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as racha_ganadora,
             COUNT(*) OVER (PARTITION BY id) as partidos_jugados,
-            SUM(victoria) OVER (PARTITION BY id) as victorias
+            SUM(victoria) OVER (PARTITION BY id) as victorias,
+            -- Determinar si el jugador perdió en la última fecha
+            ROW_NUMBER() OVER (PARTITION BY id ORDER BY fecha DESC) as rn
         FROM 
             partidos_jugador
     )
@@ -167,7 +167,11 @@ def obtener_estadisticas_jugadores():
         posicion,
         MAX(partidos_jugados) as partidos_jugados,
         MAX(victorias) as victorias,
-        MAX(CASE WHEN racha_actual > 0 THEN racha_actual ELSE 0 END) as racha_ganadora
+        -- Reiniciar la racha a 0 si hay una derrota en la última fecha
+        CASE 
+            WHEN MAX(victoria) = 0 AND MAX(rn) = 1 THEN 0
+            ELSE MAX(racha_actual)
+        END as racha_ganadora
     FROM 
         rachas
     GROUP BY 
