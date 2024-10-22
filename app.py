@@ -118,8 +118,11 @@ def registrar_partido(fecha, equipo1, equipo2, goles1, goles2):
     conn.commit()
 
 def guardar_equipos_generados(fecha, equipo1, equipo2):
-    c.execute("INSERT INTO equipos_generados (fecha, equipo1, equipo2) VALUES (?, ?, ?)",
-              (fecha, ','.join(equipo1), ','.join(equipo2)))
+    c.execute("UPDATE equipos_generados SET equipo1=?, equipo2=? WHERE fecha=?", 
+              (','.join(equipo1), ','.join(equipo2), fecha))
+    if c.rowcount == 0:
+        c.execute("INSERT INTO equipos_generados (fecha, equipo1, equipo2) VALUES (?, ?, ?)",
+                  (fecha, ','.join(equipo1), ','.join(equipo2)))
     conn.commit()
 
 def obtener_equipos_generados():
@@ -136,7 +139,7 @@ def obtener_estadisticas_jugadores():
             p.fecha,
             CASE 
                 WHEN (p.equipo1 LIKE '%' || j.nombre || '%' AND p.goles1 > p.goles2) OR 
-                     (p.equipo2 LIKE '%' || j.nombre || '%' AND p.goles2 > p.goles1) 
+                    (p.equipo2 LIKE '%' || j.nombre || '%' AND p.goles2 > p.goles1) 
                 THEN 1 
                 ELSE 0 
             END as victoria
@@ -145,39 +148,50 @@ def obtener_estadisticas_jugadores():
         LEFT JOIN 
             partidos p ON p.equipo1 LIKE '%' || j.nombre || '%' OR p.equipo2 LIKE '%' || j.nombre || '%'
     ),
-    rachas AS (
+    racha_preliminar AS (
         SELECT 
             id,
             nombre,
             posicion,
             fecha,
             victoria,
-            -- Calcular la racha ganadora
+            -- Calcular la racha de victorias en curso
             SUM(CASE WHEN victoria = 1 THEN 1 ELSE 0 END) OVER (PARTITION BY id ORDER BY fecha ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as racha_actual,
-            COUNT(*) OVER (PARTITION BY id) as partidos_jugados,
-            SUM(victoria) OVER (PARTITION BY id) as victorias,
-            -- Determinar si el jugador perdió en la última fecha
             ROW_NUMBER() OVER (PARTITION BY id ORDER BY fecha DESC) as rn
         FROM 
             partidos_jugador
+    ),
+    racha_final AS (
+        SELECT 
+            id,
+            nombre,
+            posicion,
+            MAX(racha_actual) as racha_actual,
+            -- Revisar el resultado del último partido
+            MAX(CASE WHEN rn = 1 THEN victoria END) as ultimo_partido,
+            COUNT(*) as partidos_jugados,
+            SUM(victoria) as victorias
+        FROM 
+            racha_preliminar
+        GROUP BY 
+            id, nombre, posicion
     )
     SELECT 
         id,
         nombre,
         posicion,
-        MAX(partidos_jugados) as partidos_jugados,
-        MAX(victorias) as victorias,
-        -- Reiniciar la racha a 0 si hay una derrota en la última fecha
+        partidos_jugados,
+        victorias,
+        -- Reiniciar la racha si el último partido fue una derrota
         CASE 
-            WHEN MAX(victoria) = 0 AND MAX(rn) = 1 THEN 0
-            ELSE MAX(racha_actual)
+            WHEN ultimo_partido = 0 THEN 0
+            ELSE racha_actual
         END as racha_ganadora
     FROM 
-        rachas
-    GROUP BY 
-        id, nombre, posicion
+        racha_final
     ORDER BY 
         racha_ganadora DESC, victorias DESC, partidos_jugados DESC
+
     """
     df = pd.read_sql_query(query, conn)
     df['porcentaje_victorias'] = (df['victorias'] / df['partidos_jugados'] * 100).round(2)
@@ -414,75 +428,79 @@ with tab4:
     if estadisticas.empty:
         st.write("No hay datos de partidos para mostrar en la tabla de posiciones.")
     else:
-        # Mostrar los jugadores con racha ganadora
-        st.subheader("Jugadores con Racha Ganadora 🔥")
-        rachas = estadisticas[estadisticas['racha_ganadora'] > 0].head(5)
-        for _, jugador in rachas.iterrows():
-            trofeo = "🏆" if jugador['racha_ganadora'] >= 7 else ""
-            st.write(f"{jugador['nombre']}: {jugador['racha_ganadora']} partidos {trofeo}")
+        col1, col2 = st.columns([8, 2])  # 80% para posiciones, 20% para mundialito
         
-        # Tabla de posiciones
-        st.subheader("Tabla General")
-        estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'victorias', 'partidos_jugados'], ascending=[False, False, False])
-        estadisticas['posicion'] = range(1, len(estadisticas) + 1)
-        estadisticas = estadisticas[['posicion', 'nombre', 'partidos_jugados', 'victorias', 'porcentaje_victorias', 'racha_ganadora']]
-        
-        # Detectar el tema actual
-        is_dark_theme = st.get_option("theme.base") == "dark"
-        
-        # Función para aplicar el degradado de colores
-        def color_scale(val, column):
-            if pd.isna(val):
-                return ''
-            if column == 'racha_ganadora':
-                if val >= 7:
-                    return 'background-color: gold; color: black;'
-                elif val > 0:
-                    return 'background-color: lightgreen; color: black;'
+        with col1:
+            # Tabla de posiciones
+            st.subheader("Tabla General")
+            estadisticas = estadisticas.sort_values(by=['porcentaje_victorias', 'victorias', 'partidos_jugados'], ascending=[False, False, False])
+            estadisticas['posicion'] = range(1, len(estadisticas) + 1)
+            estadisticas = estadisticas[['posicion', 'nombre', 'partidos_jugados', 'victorias', 'porcentaje_victorias', 'racha_ganadora']]
             
-            min_val = estadisticas[column].min()
-            max_val = estadisticas[column].max()
+            # Detectar el tema actual
+            is_dark_theme = st.get_option("theme.base") == "dark"
             
-            if min_val == max_val:
-                r, g = 0, 0
-            else:
-                # Crear un degradado de rojo (bajo) a verde (alto)
-                r = max((max_val - val) / (max_val - min_val), 0)
-                g = max((val - min_val) / (max_val - min_val), 0)
-            b = 0
+            # Función para aplicar el degradado de colores
+            def color_scale(val, column):
+                if pd.isna(val):
+                    return ''
+                if column == 'racha_ganadora':
+                    if val >= 7:
+                        return 'background-color: gold; color: black;'
+                    elif val > 0:
+                        return 'background-color: lightgreen; color: black;'
+                
+                min_val = estadisticas[column].min()
+                max_val = estadisticas[column].max()
+                
+                if min_val == max_val:
+                    r, g = 0, 0
+                else:
+                    # Crear un degradado de rojo (bajo) a verde (alto)
+                    r = max((max_val - val) / (max_val - min_val), 0)
+                    g = max((val - min_val) / (max_val - min_val), 0)
+                b = 0
+                
+                # Ajustar la opacidad y el color del texto según el tema
+                if is_dark_theme:
+                    return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7); color: white;'
+                else:
+                    return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.3); color: black;'
             
-            # Ajustar la opacidad y el color del texto según el tema
-            if is_dark_theme:
-                return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.7); color: white;'
-            else:
-                return f'background-color: rgba({int(r*255)}, {int(g*255)}, {int(b*255)}, 0.3); color: black;'
+            # Aplicar estilos a la tabla
+            styled_table = (estadisticas.style
+                .applymap(lambda x: color_scale(x, 'porcentaje_victorias'), subset=['porcentaje_victorias'])
+                .applymap(lambda x: color_scale(x, 'racha_ganadora'), subset=['racha_ganadora'])
+                .format({
+                    'posicion': '{:.0f}',
+                    'porcentaje_victorias': '{:.2f}%',
+                    'victorias': '{:.0f}',
+                    'partidos_jugados': '{:.0f}',
+                    'racha_ganadora': '{:.0f}'
+                })
+                .set_properties(**{
+                    'font-weight': 'bold',
+                    'text-align': 'center'
+                })
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('background-color', '#4A4A4A' if is_dark_theme else '#E6E6E6'), 
+                        ('color', 'white' if is_dark_theme else 'black')
+                    ]},
+                    {'selector': 'td', 'props': [('border', '1px solid #4A4A4A' if is_dark_theme else '1px solid #E6E6E6')]},
+                ])
+            )
+            
+            # Mostrar la tabla
+            st.dataframe(styled_table, hide_index=True, height=400)
         
-        # Aplicar estilos a la tabla
-        styled_table = (estadisticas.style
-            .applymap(lambda x: color_scale(x, 'porcentaje_victorias'), subset=['porcentaje_victorias'])
-            .applymap(lambda x: color_scale(x, 'racha_ganadora'), subset=['racha_ganadora'])
-            .format({
-                'posicion': '{:.0f}',
-                'porcentaje_victorias': '{:.2f}%',
-                'victorias': '{:.0f}',
-                'partidos_jugados': '{:.0f}',
-                'racha_ganadora': '{:.0f}'
-            })
-            .set_properties(**{
-                'font-weight': 'bold',
-                'text-align': 'center'
-            })
-            .set_table_styles([
-                {'selector': 'th', 'props': [
-                    ('background-color', '#4A4A4A' if is_dark_theme else '#E6E6E6'), 
-                    ('color', 'white' if is_dark_theme else 'black')
-                ]},
-                {'selector': 'td', 'props': [('border', '1px solid #4A4A4A' if is_dark_theme else '1px solid #E6E6E6')]},
-            ])
-        )
-        
-        # Mostrar la tabla
-        st.dataframe(styled_table, hide_index=True, height=400)
+        with col2:
+            # Mostrar los jugadores con racha ganadora
+            st.subheader("Mundialito 🌎")
+            rachas = estadisticas[estadisticas['racha_ganadora'] > 0].sort_values(by='racha_ganadora', ascending=False).head(5)
+            for _, jugador in rachas.iterrows():
+                trofeo = "🏆" if jugador['racha_ganadora'] >= 7 else ""
+                st.write(f"{jugador['nombre']}: {jugador['racha_ganadora']} partidos {trofeo}")
 
 with tab5:
     st.header("Historial de Partidos 🏟️")
