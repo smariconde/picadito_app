@@ -144,15 +144,18 @@ def obtener_estadisticas_jugadores():
             jugadores j
         LEFT JOIN 
             partidos p ON p.equipo1 LIKE '%' || j.nombre || '%' OR p.equipo2 LIKE '%' || j.nombre || '%'
-        ORDER BY 
-            j.id, p.fecha DESC
     ),
     rachas AS (
         SELECT 
             id,
             nombre,
             posicion,
-            SUM(victoria) OVER (PARTITION BY id ORDER BY fecha DESC) as racha_actual,
+            fecha,
+            victoria,
+            -- Calcular la racha ganadora
+            SUM(CASE WHEN victoria = 1 THEN 1 ELSE 0 END) OVER (PARTITION BY id ORDER BY fecha ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as racha_actual,
+            -- Reiniciar la racha a 0 cuando hay una derrota
+            COUNT(CASE WHEN victoria = 1 THEN 1 END) OVER (PARTITION BY id ORDER BY fecha ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as racha_ganadora,
             COUNT(*) OVER (PARTITION BY id) as partidos_jugados,
             SUM(victoria) OVER (PARTITION BY id) as victorias
         FROM 
@@ -164,7 +167,7 @@ def obtener_estadisticas_jugadores():
         posicion,
         MAX(partidos_jugados) as partidos_jugados,
         MAX(victorias) as victorias,
-        MAX(racha_actual) as racha_ganadora
+        MAX(CASE WHEN racha_actual > 0 THEN racha_actual ELSE 0 END) as racha_ganadora
     FROM 
         rachas
     GROUP BY 
