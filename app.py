@@ -61,11 +61,11 @@ def generar_equipos_con_progreso(jugadores_disponibles, jugadores_por_equipo, ma
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    for i, combo in enumerate(todas_combinaciones):
+    for i, combo in enumerate(todas_combinaciones[:1000]):
         # Actualizar la barra de progreso
-        progress = (i + 1) / len(todas_combinaciones)
+        progress = (i + 1) / len(todas_combinaciones[:1000])
         progress_bar.progress(progress)
-        status_text.text(f"Analizando combinación {i+1} de {len(todas_combinaciones)}")
+        status_text.text(f"Analizando combinaciones")
         
         equipo1 = list(combo)
         equipo2 = [j for j in jugadores_disponibles if j not in equipo1]
